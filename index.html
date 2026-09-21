@@ -75,6 +75,11 @@
   .qr-item{border:2px solid #000; border-radius:10px; padding:12px; text-align:center;}
   .qr-item .num{font-size:1.6rem; font-weight:800; margin-bottom:6px;}
   .qr-item .plaque{font-size:.85rem; color:#333; margin-top:6px;}
+  tr.row-alert{background:#fdecea;}
+  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .stat-item{background:#eef2f9; border-radius:10px; padding:14px; text-align:center;}
+  .stat-item .val{font-size:1.3rem; font-weight:800; color:var(--green-dark);}
+  .stat-item .lbl{font-size:.75rem; color:var(--gray); text-transform:uppercase; margin-top:4px;}
   @media print{
     header,.no-print{display:none !important;}
     body{background:#fff;}
@@ -297,13 +302,19 @@ async function renderDashboard(){
   const statutLabel = {disponible: "Disponible", occupe: "Occupe", panne: "En panne"};
   const typeLabel = {prise: "Prise de cle", restitution: "Restitution", panne: "Mise en panne", reparation: "Remise en service"};
 
-  let rows = (vehicules || []).map(v => `
-    <tr>
+  const ALERT_HOURS = 12;
+  const now = new Date();
+  const enRetard = (vehicules || []).filter(v => v.statut === "occupe" && v.prise_le && (now - new Date(v.prise_le)) > ALERT_HOURS * 3600 * 1000);
+
+  let rows = (vehicules || []).map(v => {
+    const retard = v.statut === "occupe" && v.prise_le && (now - new Date(v.prise_le)) > ALERT_HOURS * 3600 * 1000;
+    return `
+    <tr class="${retard ? "row-alert" : ""}">
       <td><strong>N°${v.numero}</strong></td>
       <td>${escapeHtml(v.plaque)}</td>
       <td><span class="badge ${v.statut}">${statutLabel[v.statut] || v.statut}</span></td>
       <td>${v.chauffeur_actuel ? escapeHtml(v.chauffeur_actuel) : "-"}</td>
-      <td>${v.prise_le ? fmtDate(v.prise_le) : "-"}</td>
+      <td>${v.prise_le ? fmtDate(v.prise_le) : "-"}${retard ? " ⚠️" : ""}</td>
       <td class="row-actions">
         ${v.statut !== "panne"
           ? `<button class="panne" data-action="panne" data-id="${v.id}">En panne</button>`
@@ -311,7 +322,21 @@ async function renderDashboard(){
         <button class="suppr" data-action="supprimer" data-id="${v.id}" data-numero="${v.numero}">Suppr.</button>
       </td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
+
+  const priseCounts = {};
+  const chauffCounts = {};
+  (mouvements || []).forEach(m => {
+    if(m.type === "prise"){
+      if(m.numero_vehicule != null) priseCounts[m.numero_vehicule] = (priseCounts[m.numero_vehicule] || 0) + 1;
+      if(m.chauffeur) chauffCounts[m.chauffeur] = (chauffCounts[m.chauffeur] || 0) + 1;
+    }
+  });
+  const topVehiculeEntry = Object.entries(priseCounts).sort((a,b) => b[1]-a[1])[0];
+  const topChauffeurEntry = Object.entries(chauffCounts).sort((a,b) => b[1]-a[1])[0];
+  const nbOccupes = (vehicules || []).filter(v => v.statut === "occupe").length;
+  const nbPannes = (vehicules || []).filter(v => v.statut === "panne").length;
 
   let histRows = (mouvements || []).map(m => `
     <tr>
@@ -334,6 +359,22 @@ async function renderDashboard(){
   `).join("");
 
   app.innerHTML = `
+    ${enRetard.length ? `
+    <div class="card">
+      <div class="msg warn">⚠️ ${enRetard.length} vehicule${enRetard.length > 1 ? "s" : ""} non restitue${enRetard.length > 1 ? "s" : ""} depuis plus de ${ALERT_HOURS}h : ${enRetard.map(v => "N°" + v.numero).join(", ")}</div>
+    </div>` : ""}
+
+    <div class="card">
+      <h2>Statistiques</h2>
+      <div class="stat-grid">
+        <div class="stat-item"><div class="val">${nbOccupes}</div><div class="lbl">Cles sorties</div></div>
+        <div class="stat-item"><div class="val">${nbPannes}</div><div class="lbl">En panne</div></div>
+        <div class="stat-item"><div class="val">${topVehiculeEntry ? "N°"+topVehiculeEntry[0] : "-"}</div><div class="lbl">Vehicule le + utilise</div></div>
+        <div class="stat-item"><div class="val">${topChauffeurEntry ? escapeHtml(topChauffeurEntry[0]) : "-"}</div><div class="lbl">Chauffeur le + actif</div></div>
+      </div>
+      <p style="font-size:.75rem; color:var(--gray); margin-top:10px; margin-bottom:0;">Base sur les ${(mouvements||[]).length} derniers mouvements.</p>
+    </div>
+
     <div class="card">
       <h2>Vehicules (${(vehicules||[]).length})</h2>
       <div style="overflow-x:auto">
