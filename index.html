@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Suivi de cles - Belinga</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
   :root{
     --green:#1f7a3f;
@@ -101,6 +102,23 @@ const SUPABASE_URL = "https://pgoesbhdbmnjscmvsflv.supabase.co";
 const SUPABASE_KEY = "sb_publishable_QLqQLvr7DrGwfwXcM3EE2Q_x8vjMojB";
 const ADMIN_PIN = "2016";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const EMAILJS_PUBLIC_KEY = "QQmEjsCJhDr3LMT4K";
+const EMAILJS_SERVICE_ID = "service_vwrhzus";
+const EMAILJS_TEMPLATE_ID = "template_ct8ukhz";
+try{ emailjs.init({publicKey: EMAILJS_PUBLIC_KEY}); }catch(e){}
+
+function notifierEmail(action, numero, plaque, chauffeur){
+  try{
+    emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      action: action,
+      numero: numero,
+      plaque: plaque || "-",
+      chauffeur: chauffeur || "-",
+      date: fmtDate(new Date().toISOString())
+    }).catch(e => console.error("Email non envoye:", e));
+  }catch(e){ console.error("Email non envoye:", e); }
+}
 
 const app = document.getElementById("app");
 const pageTitle = document.getElementById("page-title");
@@ -254,6 +272,7 @@ async function renderVehicleView(numero){
         <div class="vehicule-num">N°${data.numero}</div>
         <div class="msg ok">✅ Cle prise avec succes par ${escapeHtml(nom)} — ${fmtDate(now)}</div>
       </div>`;
+      notifierEmail("Prise de cle", data.numero, data.plaque, nom);
     };
   }
 
@@ -280,6 +299,7 @@ async function renderVehicleView(numero){
         <div class="vehicule-num">N°${data.numero}</div>
         <div class="msg ok">✅ Cle restituee avec succes par ${escapeHtml(nom)} — ${fmtDate(now)}</div>
       </div>`;
+      notifierEmail("Restitution de cle", data.numero, data.plaque, nom);
     };
   }
 }
@@ -536,4 +556,4 @@ async function renderQrPage(){
 }
 </script>
 </body>
-</html>
+  </html>
