@@ -1,1 +1,394 @@
 
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Suivi de cles - Belinga</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+  :root{
+    --green:#1f7a3f;
+    --green-dark:#155c2e;
+    --red:#c0392b;
+    --amber:#b8860b;
+    --gray:#555;
+    --bg:#f4f6f4;
+    --card:#ffffff;
+    --border:#dfe3df;
+    --text:#1c231c;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+  }
+  header{
+    background:var(--green); color:#fff; padding:18px 16px;
+    display:flex; align-items:center; gap:10px; position:sticky; top:0; z-index:10;
+  }
+  header h1{font-size:1.1rem; margin:0; font-weight:600;}
+  header a{color:#fff; text-decoration:none; font-size:1.4rem;}
+  main{max-width:720px; margin:0 auto; padding:18px 16px 60px;}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:20px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.05);
+  }
+  .big-btn{
+    display:block; width:100%; padding:18px; border:none; border-radius:12px;
+    font-size:1.05rem; font-weight:600; color:#fff; background:var(--green);
+    margin-bottom:12px; cursor:pointer; text-align:center; text-decoration:none;
+  }
+  .big-btn.secondary{background:#2c3e50;}
+  .big-btn.danger{background:var(--red);}
+  .big-btn.amber{background:var(--amber);}
+  .big-btn:active{opacity:.85;}
+  .big-btn:disabled{opacity:.5;}
+  input[type=text]{
+    width:100%; padding:14px; font-size:1rem; border:1px solid var(--border);
+    border-radius:10px; margin-bottom:12px;
+  }
+  .badge{display:inline-block; padding:4px 12px; border-radius:999px; font-size:.85rem; font-weight:600; color:#fff;}
+  .badge.disponible{background:var(--green);}
+  .badge.occupe{background:var(--amber);}
+  .badge.panne{background:var(--red);}
+  .vehicule-num{
+    font-size:3rem; font-weight:800; color:var(--green-dark); text-align:center; margin:4px 0 2px;
+  }
+  .vehicule-plaque{text-align:center; color:var(--gray); font-size:1.1rem; margin-bottom:18px;}
+  table{width:100%; border-collapse:collapse; font-size:.88rem;}
+  th,td{padding:8px 6px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top;}
+  th{color:var(--gray); font-weight:600; font-size:.78rem; text-transform:uppercase;}
+  .msg{padding:14px; border-radius:10px; margin-bottom:14px; font-weight:600;}
+  .msg.ok{background:#e6f4ea; color:var(--green-dark);}
+  .msg.warn{background:#fdecea; color:var(--red);}
+  .msg.info{background:#eef2f9; color:#2c3e50;}
+  .row-actions button{
+    padding:6px 10px; font-size:.78rem; border:none; border-radius:8px; color:#fff; margin:2px 2px 2px 0; cursor:pointer;
+  }
+  .row-actions .panne{background:var(--red);}
+  .row-actions .repare{background:var(--green);}
+  .row-actions .suppr{background:#888;}
+  h2{font-size:1.05rem; margin:0 0 12px;}
+  label{font-size:.85rem; color:var(--gray); display:block; margin-bottom:4px;}
+  .qr-grid{display:grid; grid-template-columns:1fr 1fr; gap:18px;}
+  .qr-item{border:2px solid #000; border-radius:10px; padding:12px; text-align:center;}
+  .qr-item .num{font-size:1.6rem; font-weight:800; margin-bottom:6px;}
+  .qr-item .plaque{font-size:.85rem; color:#333; margin-top:6px;}
+  @media print{
+    header,.no-print{display:none !important;}
+    body{background:#fff;}
+    .qr-grid{grid-template-columns:1fr 1fr;}
+  }
+  .footer-link{display:block; text-align:center; margin-top:24px; color:var(--gray); font-size:.85rem;}
+  .spinner{text-align:center; padding:40px; color:var(--gray);}
+</style>
+</head>
+<body>
+<header>
+  <a href="?" title="Accueil">🔑</a>
+  <h1 id="page-title">Suivi de cles - Belinga</h1>
+</header>
+<main id="app"><div class="spinner">Chargement...</div></main>
+
+<script>
+const SUPABASE_URL = "https://pgoesbhdbmnjscmvsflv.supabase.co";
+const SUPABASE_KEY = "sb_publishable_QLqQLvr7DrGwfwXcM3EE2Q_x8vjMojB";
+const ADMIN_PIN = "2016";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const app = document.getElementById("app");
+const pageTitle = document.getElementById("page-title");
+const params = new URLSearchParams(window.location.search);
+
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function fmtDate(iso){
+  if(!iso) return "-";
+  const d = new Date(iso);
+  return d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+}
+function checkPin(){
+  const p = window.prompt("Code PIN administrateur :");
+  if(p === null) return false;
+  if(p !== ADMIN_PIN){ alert("Code PIN incorrect."); return false; }
+  return true;
+}
+function baseUrl(){
+  return window.location.origin + window.location.pathname;
+}
+
+// ---------- ROUTING ----------
+if(params.has("v")){
+  pageTitle.textContent = "Scanner un vehicule";
+  renderVehicleView(parseInt(params.get("v"), 10));
+} else if(params.get("page") === "dashboard"){
+  pageTitle.textContent = "Tableau de bord";
+  renderDashboard();
+} else if(params.get("page") === "qr"){
+  pageTitle.textContent = "QR codes a imprimer";
+  renderQrPage();
+} else {
+  pageTitle.textContent = "Suivi de cles - Belinga";
+  renderHome();
+}
+
+// ---------- HOME ----------
+function renderHome(){
+  app.innerHTML = `
+    <div class="card">
+      <h2>Bienvenue</h2>
+      <p>Scannez le QR code colle sur un vehicule pour enregistrer une prise ou une restitution de cle.</p>
+      <a class="big-btn secondary" href="?page=dashboard">📊 Tableau de bord</a>
+      <a class="big-btn amber" href="?page=qr">🖨️ QR codes des vehicules</a>
+    </div>
+  `;
+}
+
+// ---------- VEHICLE VIEW ----------
+async function renderVehicleView(numero){
+  if(!numero || isNaN(numero)){
+    app.innerHTML = `<div class="card"><div class="msg warn">Lien invalide. Contactez la logistique.</div></div>`;
+    return;
+  }
+  app.innerHTML = `<div class="spinner">Chargement du vehicule...</div>`;
+  const {data, error} = await db.from("cles_vehicules").select("*").eq("numero", numero).maybeSingle();
+  if(error){
+    app.innerHTML = `<div class="card"><div class="msg warn">Erreur de connexion. Reessayez.</div></div>`;
+    return;
+  }
+  if(!data){
+    app.innerHTML = `<div class="card"><div class="msg warn">Vehicule N°${numero} inconnu. Verifiez le QR code ou contactez la logistique.</div></div>`;
+    return;
+  }
+
+  let body = `
+    <div class="card">
+      <div class="vehicule-num">N°${data.numero}</div>
+      <div class="vehicule-plaque">${escapeHtml(data.plaque)}${data.modele ? " · " + escapeHtml(data.modele) : ""}</div>
+  `;
+
+  if(data.statut === "panne"){
+    body += `<div class="msg warn">🔒 Vehicule hors service — indisponible. Contactez la logistique.</div>`;
+  } else if(data.statut === "occupe"){
+    body += `
+      <div class="msg info">🔑 Deja pris par <strong>${escapeHtml(data.chauffeur_actuel || "?")}</strong> depuis ${fmtDate(data.prise_le)}.</div>
+      <label for="nom-restitue">Votre nom (celui qui restitue)</label>
+      <input type="text" id="nom-restitue" value="${escapeHtml(data.chauffeur_actuel || "")}">
+      <button class="big-btn secondary" id="btn-restituer">↩️ Restituer la cle</button>
+    `;
+  } else {
+    body += `
+      <label for="nom-chauffeur">Votre nom et matricule</label>
+      <input type="text" id="nom-chauffeur" placeholder="ex: OBAME Jean - M1234">
+      <button class="big-btn" id="btn-prendre">🔑 Prendre la cle</button>
+    `;
+  }
+
+  body += `</div>`;
+  app.innerHTML = body;
+
+  const btnPrendre = document.getElementById("btn-prendre");
+  if(btnPrendre){
+    btnPrendre.onclick = async () => {
+      const nom = document.getElementById("nom-chauffeur").value.trim();
+      if(!nom){ alert("Merci de saisir votre nom."); return; }
+      btnPrendre.disabled = true; btnPrendre.textContent = "Enregistrement...";
+      const now = new Date().toISOString();
+      const {error: e1} = await db.from("cles_vehicules").update({
+        statut: "occupe", chauffeur_actuel: nom, prise_le: now
+      }).eq("id", data.id);
+      const {error: e2} = await db.from("cles_mouvements").insert({
+        vehicule_id: data.id, numero_vehicule: data.numero, plaque: data.plaque,
+        chauffeur: nom, type: "prise"
+      });
+      if(e1 || e2){
+        alert("Erreur lors de l'enregistrement. Reessayez.");
+        btnPrendre.disabled = false; btnPrendre.textContent = "🔑 Prendre la cle";
+        return;
+      }
+      app.innerHTML = `<div class="card">
+        <div class="vehicule-num">N°${data.numero}</div>
+        <div class="msg ok">✅ Cle prise avec succes par ${escapeHtml(nom)} — ${fmtDate(now)}</div>
+      </div>`;
+    };
+  }
+
+  const btnRestituer = document.getElementById("btn-restituer");
+  if(btnRestituer){
+    btnRestituer.onclick = async () => {
+      const nom = document.getElementById("nom-restitue").value.trim();
+      if(!nom){ alert("Merci de saisir votre nom."); return; }
+      btnRestituer.disabled = true; btnRestituer.textContent = "Enregistrement...";
+      const now = new Date().toISOString();
+      const {error: e1} = await db.from("cles_vehicules").update({
+        statut: "disponible", chauffeur_actuel: null, prise_le: null
+      }).eq("id", data.id);
+      const {error: e2} = await db.from("cles_mouvements").insert({
+        vehicule_id: data.id, numero_vehicule: data.numero, plaque: data.plaque,
+        chauffeur: nom, type: "restitution"
+      });
+      if(e1 || e2){
+        alert("Erreur lors de l'enregistrement. Reessayez.");
+        btnRestituer.disabled = false; btnRestituer.textContent = "↩️ Restituer la cle";
+        return;
+      }
+      app.innerHTML = `<div class="card">
+        <div class="vehicule-num">N°${data.numero}</div>
+        <div class="msg ok">✅ Cle restituee avec succes par ${escapeHtml(nom)} — ${fmtDate(now)}</div>
+      </div>`;
+    };
+  }
+}
+
+// ---------- DASHBOARD ----------
+async function renderDashboard(){
+  app.innerHTML = `<div class="spinner">Chargement du tableau de bord...</div>`;
+
+  const [{data: vehicules, error: e1}, {data: mouvements, error: e2}] = await Promise.all([
+    db.from("cles_vehicules").select("*").order("numero", {ascending: true}),
+    db.from("cles_mouvements").select("*").order("horodatage", {ascending: false}).limit(50)
+  ]);
+
+  if(e1 || e2){
+    app.innerHTML = `<div class="card"><div class="msg warn">Erreur de chargement. Reessayez.</div></div>`;
+    return;
+  }
+
+  const statutLabel = {disponible: "Disponible", occupe: "Occupe", panne: "En panne"};
+  const typeLabel = {prise: "Prise de cle", restitution: "Restitution", panne: "Mise en panne", reparation: "Remise en service"};
+
+  let rows = (vehicules || []).map(v => `
+    <tr>
+      <td><strong>N°${v.numero}</strong></td>
+      <td>${escapeHtml(v.plaque)}</td>
+      <td><span class="badge ${v.statut}">${statutLabel[v.statut] || v.statut}</span></td>
+      <td>${v.chauffeur_actuel ? escapeHtml(v.chauffeur_actuel) : "-"}</td>
+      <td>${v.prise_le ? fmtDate(v.prise_le) : "-"}</td>
+      <td class="row-actions">
+        ${v.statut !== "panne"
+          ? `<button class="panne" data-action="panne" data-id="${v.id}">En panne</button>`
+          : `<button class="repare" data-action="reparation" data-id="${v.id}">Repare</button>`}
+        <button class="suppr" data-action="supprimer" data-id="${v.id}" data-numero="${v.numero}">Suppr.</button>
+      </td>
+    </tr>
+  `).join("");
+
+  let histRows = (mouvements || []).map(m => `
+    <tr>
+      <td>${fmtDate(m.horodatage)}</td>
+      <td>N°${m.numero_vehicule ?? "-"}</td>
+      <td>${escapeHtml(m.plaque || "-")}</td>
+      <td>${escapeHtml(m.chauffeur || "-")}</td>
+      <td>${typeLabel[m.type] || m.type}</td>
+    </tr>
+  `).join("");
+
+  app.innerHTML = `
+    <div class="card">
+      <h2>Vehicules (${(vehicules||[]).length})</h2>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>N°</th><th>Plaque</th><th>Statut</th><th>Chauffeur</th><th>Depuis</th><th>Actions</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="6">Aucun vehicule enregistre.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Ajouter un vehicule</h2>
+      <label for="add-numero">Numero (affiche au-dessus du QR)</label>
+      <input type="text" id="add-numero" placeholder="ex: 8" inputmode="numeric">
+      <label for="add-plaque">Plaque d'immatriculation</label>
+      <input type="text" id="add-plaque" placeholder="ex: LC-293-AA">
+      <label for="add-modele">Modele (optionnel)</label>
+      <input type="text" id="add-modele" placeholder="ex: Hilux GUN125">
+      <button class="big-btn" id="btn-ajouter">+ Ajouter le vehicule</button>
+    </div>
+
+    <div class="card">
+      <h2>Historique recent</h2>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Date</th><th>N°</th><th>Plaque</th><th>Chauffeur</th><th>Type</th></tr></thead>
+          <tbody>${histRows || `<tr><td colspan="5">Aucun mouvement.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <a class="big-btn amber no-print" href="?page=qr">🖨️ Imprimer les QR codes</a>
+    <a class="big-btn secondary no-print" href="?">⬅️ Accueil</a>
+  `;
+
+  app.querySelectorAll("[data-action]").forEach(btn => {
+    btn.onclick = async () => {
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      if(!checkPin()) return;
+
+      if(action === "panne"){
+        await db.from("cles_vehicules").update({statut: "panne"}).eq("id", id);
+        const v = (vehicules||[]).find(x => x.id === id);
+        await db.from("cles_mouvements").insert({vehicule_id:id, numero_vehicule: v?.numero, plaque: v?.plaque, chauffeur: "Admin", type: "panne"});
+      } else if(action === "reparation"){
+        await db.from("cles_vehicules").update({statut: "disponible", chauffeur_actuel: null, prise_le: null}).eq("id", id);
+        const v = (vehicules||[]).find(x => x.id === id);
+        await db.from("cles_mouvements").insert({vehicule_id:id, numero_vehicule: v?.numero, plaque: v?.plaque, chauffeur: "Admin", type: "reparation"});
+      } else if(action === "supprimer"){
+        if(!confirm(`Supprimer definitivement le vehicule N°${btn.dataset.numero} ?`)) return;
+        await db.from("cles_vehicules").delete().eq("id", id);
+      }
+      renderDashboard();
+    };
+  });
+
+  document.getElementById("btn-ajouter").onclick = async () => {
+    if(!checkPin()) return;
+    const numero = parseInt(document.getElementById("add-numero").value, 10);
+    const plaque = document.getElementById("add-plaque").value.trim();
+    const modele = document.getElementById("add-modele").value.trim();
+    if(!numero || !plaque){ alert("Numero et plaque obligatoires."); return; }
+    const {error} = await db.from("cles_vehicules").insert({numero, plaque, modele: modele || null});
+    if(error){
+      alert(error.message.includes("duplicate") ? "Ce numero existe deja." : "Erreur lors de l'ajout.");
+      return;
+    }
+    renderDashboard();
+  };
+}
+
+// ---------- QR PAGE ----------
+async function renderQrPage(){
+  app.innerHTML = `<div class="spinner">Generation des QR codes...</div>`;
+  const {data: vehicules, error} = await db.from("cles_vehicules").select("*").order("numero", {ascending: true});
+  if(error || !vehicules || vehicules.length === 0){
+    app.innerHTML = `<div class="card"><div class="msg info">Aucun vehicule a afficher. Ajoutez des vehicules depuis le tableau de bord.</div></div>`;
+    return;
+  }
+
+  app.innerHTML = `
+    <div class="card no-print">
+      <button class="big-btn" onclick="window.print()">🖨️ Lancer l'impression</button>
+      <a class="big-btn secondary" href="?page=dashboard">⬅️ Retour au tableau de bord</a>
+    </div>
+    <div class="qr-grid" id="qr-grid"></div>
+  `;
+  const grid = document.getElementById("qr-grid");
+  const base = baseUrl();
+
+  for(const v of vehicules){
+    const item = document.createElement("div");
+    item.className = "qr-item";
+    item.innerHTML = `<div class="num">Vehicule N°${v.numero}</div><canvas></canvas><div class="plaque">${escapeHtml(v.plaque)}</div>`;
+    grid.appendChild(item);
+    const canvas = item.querySelector("canvas");
+    const url = `${base}?v=${v.numero}`;
+    await QRCode.toCanvas(canvas, url, {width: 200, margin: 1});
+  }
+}
+</script>
+</body>
+  </html>
