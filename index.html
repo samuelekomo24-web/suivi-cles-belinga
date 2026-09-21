@@ -120,7 +120,10 @@ function baseUrl(){
 }
 
 // ---------- ROUTING ----------
-if(params.has("v")){
+if(params.has("c")){
+  pageTitle.textContent = "Identification chauffeur";
+  renderChauffeurView(parseInt(params.get("c"), 10));
+} else if(params.has("v")){
   pageTitle.textContent = "Scanner un vehicule";
   renderVehicleView(parseInt(params.get("v"), 10));
 } else if(params.get("page") === "dashboard"){
@@ -142,6 +145,35 @@ function renderHome(){
       <p>Scannez le QR code colle sur un vehicule pour enregistrer une prise ou une restitution de cle.</p>
       <a class="big-btn secondary" href="?page=dashboard">📊 Tableau de bord</a>
       <a class="big-btn amber" href="?page=qr">🖨️ QR codes des vehicules</a>
+    </div>
+  `;
+}
+
+// ---------- CHAUFFEUR VIEW (badge scan) ----------
+async function renderChauffeurView(numero){
+  if(!numero || isNaN(numero)){
+    app.innerHTML = `<div class="card"><div class="msg warn">Badge invalide. Contactez la logistique.</div></div>`;
+    return;
+  }
+  app.innerHTML = `<div class="spinner">Chargement...</div>`;
+  const {data, error} = await db.from("cles_chauffeurs").select("*").eq("numero", numero).maybeSingle();
+  if(error){
+    app.innerHTML = `<div class="card"><div class="msg warn">Erreur de connexion. Reessayez.</div></div>`;
+    return;
+  }
+  if(!data){
+    app.innerHTML = `<div class="card"><div class="msg warn">Badge N°${numero} inconnu. Contactez la logistique.</div></div>`;
+    return;
+  }
+  try{
+    localStorage.setItem("chauffeur_actuel", JSON.stringify({numero: data.numero, nom: data.nom}));
+  }catch(e){}
+  app.innerHTML = `
+    <div class="card">
+      <div class="vehicule-num">👤</div>
+      <div class="msg ok" style="text-align:center">✅ Identifie : ${escapeHtml(data.nom)}</div>
+      <p style="text-align:center; color:var(--gray)">Votre nom sera pre-rempli automatiquement quand vous scannerez un vehicule.</p>
+      <a class="big-btn secondary" href="?">⬅️ Accueil</a>
     </div>
   `;
 }
@@ -179,9 +211,14 @@ async function renderVehicleView(numero){
       <button class="big-btn secondary" id="btn-restituer">↩️ Restituer la cle</button>
     `;
   } else {
+    let nomConnu = "";
+    try{
+      const saved = JSON.parse(localStorage.getItem("chauffeur_actuel") || "null");
+      if(saved && saved.nom) nomConnu = saved.nom;
+    }catch(e){}
     body += `
       <label for="nom-chauffeur">Votre nom et matricule</label>
-      <input type="text" id="nom-chauffeur" placeholder="ex: OBAME Jean - M1234">
+      <input type="text" id="nom-chauffeur" placeholder="ex: OBAME Jean - M1234" value="${escapeHtml(nomConnu)}">
       <button class="big-btn" id="btn-prendre">🔑 Prendre la cle</button>
     `;
   }
@@ -246,12 +283,13 @@ async function renderVehicleView(numero){
 async function renderDashboard(){
   app.innerHTML = `<div class="spinner">Chargement du tableau de bord...</div>`;
 
-  const [{data: vehicules, error: e1}, {data: mouvements, error: e2}] = await Promise.all([
+  const [{data: vehicules, error: e1}, {data: mouvements, error: e2}, {data: chauffeurs, error: e3}] = await Promise.all([
     db.from("cles_vehicules").select("*").order("numero", {ascending: true}),
-    db.from("cles_mouvements").select("*").order("horodatage", {ascending: false}).limit(50)
+    db.from("cles_mouvements").select("*").order("horodatage", {ascending: false}).limit(50),
+    db.from("cles_chauffeurs").select("*").order("numero", {ascending: true})
   ]);
 
-  if(e1 || e2){
+  if(e1 || e2 || e3){
     app.innerHTML = `<div class="card"><div class="msg warn">Erreur de chargement. Reessayez.</div></div>`;
     return;
   }
@@ -285,6 +323,16 @@ async function renderDashboard(){
     </tr>
   `).join("");
 
+  let chauffRows = (chauffeurs || []).map(c => `
+    <tr>
+      <td><strong>N°${c.numero}</strong></td>
+      <td>${escapeHtml(c.nom)}</td>
+      <td class="row-actions">
+        <button class="suppr" data-action-c="supprimer" data-id-c="${c.id}" data-numero-c="${c.numero}">Suppr.</button>
+      </td>
+    </tr>
+  `).join("");
+
   app.innerHTML = `
     <div class="card">
       <h2>Vehicules (${(vehicules||[]).length})</h2>
@@ -305,6 +353,25 @@ async function renderDashboard(){
       <label for="add-modele">Modele (optionnel)</label>
       <input type="text" id="add-modele" placeholder="ex: Hilux GUN125">
       <button class="big-btn" id="btn-ajouter">+ Ajouter le vehicule</button>
+    </div>
+
+    <div class="card">
+      <h2>Chauffeurs (${(chauffeurs||[]).length})</h2>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>N° badge</th><th>Nom</th><th>Actions</th></tr></thead>
+          <tbody>${chauffRows || `<tr><td colspan="3">Aucun chauffeur enregistre.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Ajouter un chauffeur</h2>
+      <label for="add-c-numero">Numero du badge</label>
+      <input type="text" id="add-c-numero" placeholder="ex: 12" inputmode="numeric">
+      <label for="add-c-nom">Nom et matricule</label>
+      <input type="text" id="add-c-nom" placeholder="ex: OBAME Jean - M1234">
+      <button class="big-btn" id="btn-ajouter-c">+ Ajouter le chauffeur</button>
     </div>
 
     <div class="card">
@@ -356,26 +423,63 @@ async function renderDashboard(){
     }
     renderDashboard();
   };
+
+  app.querySelectorAll("[data-action-c]").forEach(btn => {
+    btn.onclick = async () => {
+      if(!checkPin()) return;
+      if(!confirm(`Supprimer le chauffeur N°${btn.dataset.numeroC} ?`)) return;
+      await db.from("cles_chauffeurs").delete().eq("id", btn.dataset.idC);
+      renderDashboard();
+    };
+  });
+
+  document.getElementById("btn-ajouter-c").onclick = async () => {
+    if(!checkPin()) return;
+    const numero = parseInt(document.getElementById("add-c-numero").value, 10);
+    const nom = document.getElementById("add-c-nom").value.trim();
+    if(!numero || !nom){ alert("Numero et nom obligatoires."); return; }
+    const {error} = await db.from("cles_chauffeurs").insert({numero, nom});
+    if(error){
+      alert(error.message.includes("duplicate") ? "Ce numero de badge existe deja." : "Erreur lors de l'ajout.");
+      return;
+    }
+    renderDashboard();
+  };
 }
 
 // ---------- QR PAGE ----------
 async function renderQrPage(){
   app.innerHTML = `<div class="spinner">Generation des QR codes...</div>`;
-  const {data: vehicules, error} = await db.from("cles_vehicules").select("*").order("numero", {ascending: true});
-  if(error || !vehicules || vehicules.length === 0){
-    app.innerHTML = `<div class="card"><div class="msg info">Aucun vehicule a afficher. Ajoutez des vehicules depuis le tableau de bord.</div></div>`;
+  const [{data: vehicules, error: e1}, {data: chauffeurs, error: e2}] = await Promise.all([
+    db.from("cles_vehicules").select("*").order("numero", {ascending: true}),
+    db.from("cles_chauffeurs").select("*").order("numero", {ascending: true})
+  ]);
+  if(e1 || e2 || (!vehicules?.length && !chauffeurs?.length)){
+    app.innerHTML = `<div class="card"><div class="msg info">Aucun vehicule ni chauffeur a afficher. Ajoutez-en depuis le tableau de bord.</div></div>`;
     return;
   }
 
   const base = baseUrl();
-  const items = vehicules.map(v => {
+  const qrImg = (url) => `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(url)}`;
+
+  const vehItems = (vehicules||[]).map(v => {
     const url = `${base}?v=${v.numero}`;
-    const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(url)}`;
     return `
       <div class="qr-item">
         <div class="num">Vehicule N°${v.numero}</div>
-        <img src="${qrImg}" width="220" height="220" alt="QR vehicule ${v.numero}">
+        <img src="${qrImg(url)}" width="220" height="220" alt="QR vehicule ${v.numero}">
         <div class="plaque">${escapeHtml(v.plaque)}</div>
+      </div>
+    `;
+  }).join("");
+
+  const chauffItems = (chauffeurs||[]).map(c => {
+    const url = `${base}?c=${c.numero}`;
+    return `
+      <div class="qr-item">
+        <div class="num">Badge N°${c.numero}</div>
+        <img src="${qrImg(url)}" width="220" height="220" alt="QR chauffeur ${c.numero}">
+        <div class="plaque">${escapeHtml(c.nom)}</div>
       </div>
     `;
   }).join("");
@@ -385,7 +489,8 @@ async function renderQrPage(){
       <button class="big-btn" onclick="window.print()">🖨️ Lancer l'impression</button>
       <a class="big-btn secondary" href="?page=dashboard">⬅️ Retour au tableau de bord</a>
     </div>
-    <div class="qr-grid" id="qr-grid">${items}</div>
+    ${vehItems ? `<h2 class="no-print" style="padding:0 4px">Vehicules</h2><div class="qr-grid">${vehItems}</div>` : ""}
+    ${chauffItems ? `<h2 class="no-print" style="padding:0 4px; margin-top:20px">Badges chauffeurs</h2><div class="qr-grid">${chauffItems}</div>` : ""}
   `;
 }
 </script>
