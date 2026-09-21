@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="fr">
 <head>
@@ -6,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Suivi de cles - Belinga</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
   :root{
     --green:#1f7a3f;
@@ -369,26 +367,27 @@ async function renderQrPage(){
     return;
   }
 
+  const base = baseUrl();
+  const items = vehicules.map(v => {
+    const url = `${base}?v=${v.numero}`;
+    const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(url)}`;
+    return `
+      <div class="qr-item">
+        <div class="num">Vehicule N°${v.numero}</div>
+        <img src="${qrImg}" width="220" height="220" alt="QR vehicule ${v.numero}">
+        <div class="plaque">${escapeHtml(v.plaque)}</div>
+      </div>
+    `;
+  }).join("");
+
   app.innerHTML = `
     <div class="card no-print">
       <button class="big-btn" onclick="window.print()">🖨️ Lancer l'impression</button>
       <a class="big-btn secondary" href="?page=dashboard">⬅️ Retour au tableau de bord</a>
     </div>
-    <div class="qr-grid" id="qr-grid"></div>
+    <div class="qr-grid" id="qr-grid">${items}</div>
   `;
-  const grid = document.getElementById("qr-grid");
-  const base = baseUrl();
-
-  for(const v of vehicules){
-    const item = document.createElement("div");
-    item.className = "qr-item";
-    item.innerHTML = `<div class="num">Vehicule N°${v.numero}</div><canvas></canvas><div class="plaque">${escapeHtml(v.plaque)}</div>`;
-    grid.appendChild(item);
-    const canvas = item.querySelector("canvas");
-    const url = `${base}?v=${v.numero}`;
-    await QRCode.toCanvas(canvas, url, {width: 200, margin: 1});
-  }
 }
 </script>
 </body>
-  </html>
+</html>
